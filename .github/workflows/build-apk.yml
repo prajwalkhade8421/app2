@@ -33,11 +33,14 @@ jobs:
       - name: Build Web App
         run: npm run build
 
-      - name: Check Android Project
+      - name: Prepare Android Project
         run: |
-          test -d android
-          test -f android/gradlew
-          echo "Android project found."
+          if [ -d "android" ] && [ -f "android/gradlew" ]; then
+            echo "Existing Android project found."
+          else
+            echo "Android project not found. Creating it..."
+            npx cap add android
+          fi
 
       - name: Sync Capacitor
         run: npx cap sync android
