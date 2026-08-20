@@ -1,0 +1,18 @@
+{
+  "name": "Study Mode — Timeskip",
+  "short_name": "StudyMode",
+  "description": "Serious Timeskip Productivity System with 1-hour repeating cycles, break penalties, and deep analytics.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

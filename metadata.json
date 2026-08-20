@@ -1,0 +1,8 @@
+{
+  "name": "Study Mode",
+  "description": "Timeskip Mode productivity app for intense study sessions with repeating 1-hour cycles, break penalties, app blocking, and 30-day analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
