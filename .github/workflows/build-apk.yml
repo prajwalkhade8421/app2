@@ -14,65 +14,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 21
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Setup Node 22
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           npm install
-          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Check Capacitor
-        run: |
-          node --version
-          npx cap --version
-
-      - name: Build Web App
+      - name: Build web app
         run: npm run build
 
-      - name: Generate Android Project
+      - name: Create Android project
         run: |
-          if [ -d "android/app/src/main" ]; then
-            mkdir -p /tmp/custom_android_src
-            cp -r android/app/src/main/. /tmp/custom_android_src/
+          if [ -d "android" ]; then
+            cp -r android /tmp/android-backup
+            rm -rf android
           fi
-
-          rm -rf android
 
           npx cap add android
 
-          if [ -d "/tmp/custom_android_src" ]; then
-            cp -r /tmp/custom_android_src/. android/app/src/main/
+          if [ -d "/tmp/android-backup/app/src/main" ]; then
+            cp -r /tmp/android-backup/app/src/main/. android/app/src/main/
           fi
 
           npx cap sync android
 
-      - name: Prepare Gradle
+      - name: Build APK
         working-directory: android
         run: |
-          test -f gradlew
           chmod +x gradlew
-          ./gradlew --version
-
-      - name: Build Debug APK
-        working-directory: android
-        run: |
-          ./gradlew clean
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Verify APK
-        run: |
-          test -f android/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
-
       - name: Upload APK
-        uses: actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: Study-Mode-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
