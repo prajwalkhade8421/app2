@@ -14,16 +14,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
-      - name: Setup Node
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
 
       - name: Install Dependencies
         run: |
@@ -33,34 +33,46 @@ jobs:
       - name: Build Web App
         run: npm run build
 
-      - name: Setup Capacitor Android Project
+      - name: Check Android Project
         run: |
-          # Backup our repository's custom native code, resources, and accessibility services
-          if [ -d "android/app/src/main" ]; then
-            mkdir -p /tmp/custom_android_src
-            cp -r android/app/src/main/* /tmp/custom_android_src/
-            rm -rf android
-          fi
+          test -d android
+          test -f android/gradlew
+          echo "Android project found."
 
-          # Generate clean Capacitor Android Gradle project (creates gradlew, build.gradle, themes, icons)
-          npx cap add android
+      - name: Sync Capacitor
+        run: npx cap sync android
 
-          # Merge our custom AndroidManifest, accessibility configs, and Kotlin blocker services
-          if [ -d "/tmp/custom_android_src" ]; then
-            cp -r /tmp/custom_android_src/* android/app/src/main/
-          fi
+      - name: Prepare Gradle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --version
 
-          # Sync web bundle and plugins
-          npx cap sync android
+      - name: Clean Android Build
+        working-directory: android
+        run: |
+          ./gradlew clean --no-daemon
 
       - name: Build Debug APK
+        working-directory: android
         run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK Artifact
+      - name: Verify APK
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK successfully generated:"
+          ls -lh "$APK"
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Study-Mode-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
