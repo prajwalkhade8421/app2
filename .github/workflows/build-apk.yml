@@ -11,83 +11,219 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ---------------------------------------------------------
+      # 1. Get the project
+      # ---------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 21
+      # ---------------------------------------------------------
+      # 2. Java for Android / Gradle
+      # ---------------------------------------------------------
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
+      # ---------------------------------------------------------
+      # 3. Node
+      #
+      # IMPORTANT:
+      # No npm cache here because this project currently has
+      # no package-lock.json / npm-shrinkwrap.json / yarn.lock.
+      # ---------------------------------------------------------
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: '20'
+          package-manager-cache: false
 
-      - name: Install dependencies
+      # ---------------------------------------------------------
+      # 4. Check project structure
+      # ---------------------------------------------------------
+      - name: Check project
+        shell: bash
+        run: |
+          echo "===== PROJECT ROOT ====="
+          ls -la
+
+          echo ""
+          echo "===== PACKAGE.JSON ====="
+          if [ -f package.json ]; then
+            echo "package.json found"
+          else
+            echo "ERROR: package.json not found"
+            exit 1
+          fi
+
+          echo ""
+          echo "===== ANDROID PROJECT ====="
+          if [ -d android ]; then
+            echo "android/ found"
+          else
+            echo "ERROR: android/ directory not found"
+            echo "Gemini's native Android project is missing."
+            exit 1
+          fi
+
+      # ---------------------------------------------------------
+      # 5. Install web dependencies
+      # ---------------------------------------------------------
+      - name: Install npm dependencies
         run: npm install
 
-      - name: Install Capacitor packages
-        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+      # ---------------------------------------------------------
+      # 6. Make sure Capacitor is available
+      #
+      # We first check whether the project already contains
+      # Capacitor. This avoids unnecessarily replacing the
+      # project's existing Capacitor setup.
+      # ---------------------------------------------------------
+      - name: Check Capacitor
+        shell: bash
+        run: |
+          if [ -x "node_modules/.bin/cap" ]; then
+            echo "Capacitor CLI already installed."
+            npx cap --version
+          else
+            echo "Capacitor CLI not found."
+            echo "Installing Capacitor packages..."
+            npm install @capacitor/core @capacitor/cli @capacitor/android
+            npx cap --version
+          fi
 
+      # ---------------------------------------------------------
+      # 7. Build the React/web application
+      # ---------------------------------------------------------
       - name: Build web app
         run: npm run build
 
-      - name: Sync existing Android project
+      # ---------------------------------------------------------
+      # 8. Sync the EXISTING Android project
+      #
+      # DO NOT use "npx cap add android".
+      # Gemini already created android/.
+      # ---------------------------------------------------------
+      - name: Sync Android
         run: npx cap sync android
 
-      - name: Fix Kotlin dependency conflict
-        working-directory: android
+      # ---------------------------------------------------------
+      # 9. Create a temporary Gradle init script.
+      #
+      # This fixes the Kotlin duplicate-class problem we saw:
+      #
+      # kotlin-stdlib 1.8.22
+      #       +
+      # kotlin-stdlib-jdk7 1.6.21
+      #       +
+      # kotlin-stdlib-jdk8 1.6.21
+      #
+      # We force Kotlin dependencies onto 1.8.22 during this
+      # CI build without permanently modifying Gemini's files.
+      # ---------------------------------------------------------
+      - name: Configure Kotlin dependency resolution
+        shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          candidates = [
-              Path("build.gradle"),
-              Path("build.gradle.kts")
-          ]
-
-          gradle_file = next((p for p in candidates if p.exists()), None)
-
-          if gradle_file is None:
-              raise SystemExit("Could not find Android root Gradle file")
-
-          text = gradle_file.read_text()
-
-          fix = r'''
-          
-          // Study Mode Kotlin dependency compatibility fix
+          cat > "$RUNNER_TEMP/kotlin-fix.gradle" <<'EOF'
           allprojects {
-              configurations.all {
+              configurations.configureEach {
                   resolutionStrategy.eachDependency { details ->
                       if (details.requested.group == "org.jetbrains.kotlin") {
                           details.useVersion("1.8.22")
-                          details.because("Keep all Kotlin libraries on one compatible version")
                       }
                   }
+
+                  resolutionStrategy.force(
+                      "org.jetbrains.kotlin:kotlin-stdlib:1.8.22",
+                      "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22",
+                      "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"
+                  )
               }
           }
-          '''
+          EOF
 
-          if "Study Mode Kotlin dependency compatibility fix" not in text:
-              text += fix
-              gradle_file.write_text(text)
+          echo "Gradle Kotlin dependency fix created."
 
-          print(f"Updated {gradle_file}")
-          PY
-
-      - name: Verify Android project
+      # ---------------------------------------------------------
+      # 10. Verify Gradle wrapper
+      # ---------------------------------------------------------
+      - name: Prepare Gradle
         working-directory: android
-        run: ./gradlew tasks --no-daemon
+        shell: bash
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "ERROR: android/gradlew not found."
+            exit 1
+          fi
 
+          chmod +x gradlew
+
+          echo "Gradle wrapper:"
+          ./gradlew --version
+
+      # ---------------------------------------------------------
+      # 11. Show useful Android information
+      # ---------------------------------------------------------
+      - name: Check Android project
+        working-directory: android
+        shell: bash
+        run: |
+          echo "===== Android files ====="
+          find . -maxdepth 2 -type f | sort | head -200
+
+          echo ""
+          echo "===== Gradle files ====="
+          find . -name "build.gradle" -o -name "build.gradle.kts" | sort
+
+      # ---------------------------------------------------------
+      # 12. Clean old build output
+      # ---------------------------------------------------------
+      - name: Clean Android build
+        working-directory: android
+        run: |
+          ./gradlew clean \
+            --no-daemon \
+            --stacktrace \
+            -I "$RUNNER_TEMP/kotlin-fix.gradle"
+
+      # ---------------------------------------------------------
+      # 13. Build APK
+      # ---------------------------------------------------------
       - name: Build Debug APK
         working-directory: android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all \
+            -I "$RUNNER_TEMP/kotlin-fix.gradle"
 
+      # ---------------------------------------------------------
+      # 14. Check APK exists
+      # ---------------------------------------------------------
+      - name: Verify APK
+        shell: bash
+        run: |
+          echo "===== APK FILES ====="
+
+          find android/app/build/outputs -type f \
+            \( -name "*.apk" -o -name "*.aab" \) \
+            -print
+
+          if [ ! -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo ""
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          echo ""
+          echo "APK successfully created:"
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
+
+      # ---------------------------------------------------------
+      # 15. Upload APK to GitHub Actions
+      # ---------------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
