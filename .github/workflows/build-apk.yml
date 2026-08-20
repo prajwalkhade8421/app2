@@ -48,9 +48,6 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Add Android
-        run: npx cap add android
-
       - name: Sync Android
         run: npx cap sync android
 
