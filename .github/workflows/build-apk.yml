@@ -35,15 +35,32 @@ jobs:
 
       - name: Prepare Android Project
         run: |
-          if [ -d "android" ] && [ -f "android/gradlew" ]; then
-            echo "Existing Android project found."
+          if [ -f "android/gradlew" ]; then
+            echo "Complete Android project already exists."
           else
-            echo "Android project not found. Creating it..."
+            echo "Android folder is incomplete. Creating a fresh Capacitor project."
+
+            rm -rf /tmp/study-mode-main
+
+            if [ -d "android/app/src/main" ]; then
+              mkdir -p /tmp/study-mode-main
+              cp -r android/app/src/main/. /tmp/study-mode-main/
+              echo "Saved existing native Android code."
+            fi
+
+            rm -rf android
+
             npx cap add android
+
+            if [ -d "/tmp/study-mode-main" ]; then
+              cp -r /tmp/study-mode-main/. android/app/src/main/
+              echo "Restored native Android code."
+            fi
           fi
 
       - name: Sync Capacitor
-        run: npx cap sync android
+        run: |
+          npx cap sync android
 
       - name: Prepare Gradle
         working-directory: android
@@ -51,27 +68,25 @@ jobs:
           chmod +x gradlew
           ./gradlew --version
 
-      - name: Clean Android Build
+      - name: Clean Build
         working-directory: android
         run: |
           ./gradlew clean --no-daemon
 
-      - name: Build Debug APK
+      - name: Build APK
         working-directory: android
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Verify APK
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not generated."
+          if [ ! -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "APK was not generated."
             exit 1
           fi
 
-          echo "APK successfully generated:"
-          ls -lh "$APK"
+          echo "APK generated successfully!"
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
