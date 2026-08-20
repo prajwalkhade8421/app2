@@ -35,27 +35,12 @@ jobs:
 
       - name: Prepare Android Project
         run: |
-          if [ -f "android/gradlew" ]; then
-            echo "Complete Android project already exists."
-          else
-            echo "Android folder is incomplete. Creating a fresh Capacitor project."
-
-            rm -rf /tmp/study-mode-main
-
-            if [ -d "android/app/src/main" ]; then
-              mkdir -p /tmp/study-mode-main
-              cp -r android/app/src/main/. /tmp/study-mode-main/
-              echo "Saved existing native Android code."
-            fi
-
+          if [ ! -f "android/gradlew" ]; then
+            echo "Android project is missing gradlew."
             rm -rf android
-
             npx cap add android
-
-            if [ -d "/tmp/study-mode-main" ]; then
-              cp -r /tmp/study-mode-main/. android/app/src/main/
-              echo "Restored native Android code."
-            fi
+          else
+            echo "Existing Android project found."
           fi
 
       - name: Sync Capacitor
