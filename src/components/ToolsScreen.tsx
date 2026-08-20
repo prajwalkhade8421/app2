@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStudy } from '../context/StudyContext';
-import { Target, CheckSquare, Sparkles, Layers, FileText, Timer, Calculator } from 'lucide-react';
+import { Target, CheckSquare, Sparkles, Layers, FileText, Timer, Calculator, Calendar } from 'lucide-react';
 import { TodoTool } from './tools/TodoTool';
 import { TopicsTool } from './tools/TopicsTool';
 import { SoundscapesTool } from './tools/SoundscapesTool';
@@ -8,14 +8,16 @@ import { FlashcardsTool } from './tools/FlashcardsTool';
 import { StopwatchTool } from './tools/StopwatchTool';
 import { CalculatorTool } from './tools/CalculatorTool';
 import { NotesTool } from './tools/NotesTool';
+import { CalendarTool } from './tools/CalendarTool';
 
 export const ToolsScreen: React.FC = () => {
   const { themeConfig } = useStudy();
   const [activeTool, setActiveTool] = useState<
-    'topics' | 'todos' | 'soundscapes' | 'flashcards' | 'notes' | 'stopwatch' | 'calculator'
-  >('topics');
+    'calendar' | 'topics' | 'todos' | 'soundscapes' | 'flashcards' | 'notes' | 'stopwatch' | 'calculator'
+  >('calendar');
 
   const TOOLS_TABS = [
+    { id: 'calendar', label: 'Study Calendar', icon: Calendar },
     { id: 'topics', label: 'Target Topics', icon: Target },
     { id: 'todos', label: 'To-Do List', icon: CheckSquare },
     { id: 'soundscapes', label: 'Soundscapes', icon: Sparkles },
@@ -39,7 +41,7 @@ export const ToolsScreen: React.FC = () => {
           Study Tools
         </h2>
         <p className="text-xs text-neutral-400 mt-0.5">
-          Syllabus targets, task checklists, ambient soundscapes, flashcards, and quick utilities
+          Real-time calendar schedule, syllabus targets, task checklists, ambient soundscapes & utilities
         </p>
       </div>
 
@@ -68,6 +70,7 @@ export const ToolsScreen: React.FC = () => {
       </div>
 
       {/* ACTIVE TOOL CONTENT */}
+      {activeTool === 'calendar' && <CalendarTool />}
       {activeTool === 'topics' && <TopicsTool />}
       {activeTool === 'todos' && <TodoTool />}
       {activeTool === 'soundscapes' && <SoundscapesTool />}

@@ -23,16 +23,24 @@ import {
   Music,
   RotateCcw,
   Sparkles,
+  GitBranch,
+  Terminal,
+  ShieldCheck,
+  ShieldAlert,
+  Lock,
+  ExternalLink,
 } from 'lucide-react';
 import { Storage } from '../utils/storage';
 import { ThemeAccentColor, AlarmRingtoneId } from '../types';
 import { ALARM_RINGTONES_OPTIONS } from '../constants';
+import { NativeAppBlocker } from '../utils/nativeAppBlocker';
 
 export const SettingsScreen: React.FC = () => {
   const {
     settings,
     updateSettings,
     resetAllData,
+    loadDemoData,
     testPlayRingtone,
     stopTestRingtone,
     uploadCustomAlarmAudio,
@@ -48,9 +56,10 @@ export const SettingsScreen: React.FC = () => {
     togglePermission,
     requestAllPermissions,
     themeConfig,
+    clearAllHistory,
   } = useStudy();
 
-  const [activeSection, setActiveSection] = useState<'study' | 'alarms' | 'appearance' | 'subjects' | 'apps' | 'permissions' | 'data'>('study');
+  const [activeSection, setActiveSection] = useState<'study' | 'alarms' | 'appearance' | 'subjects' | 'apps' | 'native' | 'permissions' | 'data'>('study');
 
   // Currently playing test ringtone
   const [playingRingtoneId, setPlayingRingtoneId] = useState<AlarmRingtoneId | null>(null);
@@ -79,6 +88,9 @@ export const SettingsScreen: React.FC = () => {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [audioUploadStatus, setAudioUploadStatus] = useState<string | null>(null);
 
+  // Blocker test feedback
+  const [blockerTestStatus, setBlockerTestStatus] = useState<string | null>(null);
+
   const COLOR_PALETTE = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899', '#06B6D4', '#6366F1', '#EF4444'];
 
   const THEME_ACCENTS: { id: ThemeAccentColor; label: string; hex: string }[] = [
@@ -99,7 +111,6 @@ export const SettingsScreen: React.FC = () => {
       stopTestRingtone();
       setPlayingRingtoneId(ringtoneId);
       testPlayRingtone(ringtoneId);
-      // Auto reset playing indicator after 3.5s
       setTimeout(() => {
         setPlayingRingtoneId((curr) => (curr === ringtoneId ? null : curr));
       }, 3500);
@@ -183,6 +194,27 @@ export const SettingsScreen: React.FC = () => {
     setTimeout(() => setResetFeedback(null), 3000);
   };
 
+  const handleLoadDemo = () => {
+    loadDemoData();
+    setResetFeedback('30-day realistic sample study metrics loaded.');
+    setTimeout(() => setResetFeedback(null), 3000);
+  };
+
+  const handleClearHistory = () => {
+    clearAllHistory();
+    setResetFeedback('Study session history cleared.');
+    setTimeout(() => setResetFeedback(null), 3000);
+  };
+
+  const handleTestBlocker = async () => {
+    setBlockerTestStatus('Testing App Blocker service...');
+    await NativeAppBlocker.startBlocker(apps, 'Test Session');
+    setTimeout(() => {
+      setBlockerTestStatus('App Blocker test completed. In native APK mode, foreground packages are monitored via AccessibilityService.');
+      setTimeout(() => setBlockerTestStatus(null), 4000);
+    }, 1000);
+  };
+
   return (
     <div className="max-w-xl mx-auto p-4 sm:p-6 space-y-5 pb-24 animate-in fade-in duration-300">
       {/* Header */}
@@ -197,7 +229,7 @@ export const SettingsScreen: React.FC = () => {
           Settings
         </h2>
         <p className="text-xs text-neutral-400 mt-0.5">
-          Customize alarm ringtones, study cycle rules, themes, and storage
+          Customize study cycle rules, alarms, themes, app shield, and native Android export
         </p>
       </div>
 
@@ -210,8 +242,9 @@ export const SettingsScreen: React.FC = () => {
             { id: 'appearance', label: 'Theme & Accent' },
             { id: 'subjects', label: 'Subjects' },
             { id: 'apps', label: 'App Shield' },
+            { id: 'native', label: 'Android Blocker (APK)' },
             { id: 'permissions', label: 'Permissions' },
-            { id: 'data', label: 'Data & Reset' },
+            { id: 'data', label: 'Data & Storage' },
           ] as const
         ).map((tab) => (
           <button
@@ -353,10 +386,10 @@ export const SettingsScreen: React.FC = () => {
             <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800/80 text-[11px] text-neutral-400 space-y-1">
               <div className="text-neutral-200 font-semibold flex items-center gap-1.5">
                 <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                Background & Display-Off Sync
+                Display-Off & Background Sync
               </div>
               <p>
-                Study Mode calculates time using real-world clock timestamps. Timers, penalties, and break alerts remain 100% accurate even if your screen turns off or you switch apps.
+                Study Mode calculates time using real-world timestamps. Timers, penalties, and break alerts remain 100% accurate even if your screen turns off or you switch apps.
               </p>
             </div>
           </div>
@@ -617,7 +650,6 @@ export const SettingsScreen: React.FC = () => {
       {/* SECTION 3: THEME & ACCENT */}
       {activeSection === 'appearance' && (
         <div className="space-y-4 animate-in fade-in">
-          {/* Base Theme Mode */}
           <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
               Background Canvas Theme
@@ -644,7 +676,6 @@ export const SettingsScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Accent Color Palette */}
           <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -687,7 +718,6 @@ export const SettingsScreen: React.FC = () => {
       {/* SECTION 4: SUBJECTS */}
       {activeSection === 'subjects' && (
         <div className="space-y-4 animate-in fade-in">
-          {/* Create Subject Form */}
           <form
             onSubmit={handleCreateSubject}
             className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3"
@@ -716,7 +746,6 @@ export const SettingsScreen: React.FC = () => {
               </button>
             </div>
 
-            {/* Color selector */}
             <div className="flex items-center gap-2 pt-1">
               <span className="text-[11px] text-neutral-400">Tag Color:</span>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -735,7 +764,6 @@ export const SettingsScreen: React.FC = () => {
             </div>
           </form>
 
-          {/* Subjects List */}
           <div className="space-y-2">
             {subjects.map((subj) => (
               <div
@@ -811,7 +839,7 @@ export const SettingsScreen: React.FC = () => {
         <div className="space-y-4 animate-in fade-in">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-              Study Mode Allowed Apps
+              Study Mode Allowed & Blocked Apps
             </span>
             <button
               onClick={() => setShowAddAppModal(true)}
@@ -822,7 +850,6 @@ export const SettingsScreen: React.FC = () => {
             </button>
           </div>
 
-          {/* Add App Modal */}
           {showAddAppModal && (
             <form onSubmit={handleCreateApp} className="p-4 rounded-2xl bg-neutral-900 border border-neutral-700 space-y-3 animate-in fade-in">
               <div className="text-xs font-bold text-neutral-100">Add Application to System</div>
@@ -873,7 +900,6 @@ export const SettingsScreen: React.FC = () => {
             </form>
           )}
 
-          {/* Apps List */}
           <div className="space-y-2">
             {apps.map((app) => (
               <div
@@ -908,7 +934,58 @@ export const SettingsScreen: React.FC = () => {
         </div>
       )}
 
-      {/* SECTION 6: PERMISSIONS */}
+      {/* SECTION 6: NATIVE ANDROID BLOCKER & GITHUB SETUP */}
+      {activeSection === 'native' && (
+        <div className="space-y-4 animate-in fade-in">
+          <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400">
+                <GitBranch className="w-4 h-4" />
+                <span>Native Android APK & Blocker Bridge</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300">
+                Capacitor Ready
+              </span>
+            </div>
+
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              This repository contains full <strong>Android Native AccessibilityService & UsageStats</strong> Kotlin code in the <code className="text-cyan-300 font-mono">android/</code> directory. When built into an APK, it physically detects when distracting apps (Instagram, YouTube, etc.) are launched and pulls you back to Study Mode.
+            </p>
+
+            <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-2">
+              <div className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-neutral-400" />
+                <span>1-Minute GitHub → Native APK Build Command:</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-neutral-900 font-mono text-[11px] text-cyan-300 select-all overflow-x-auto">
+                npm install &amp;&amp; npm run build &amp;&amp; npx cap add android &amp;&amp; npx cap sync android &amp;&amp; npx cap open android
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={handleTestBlocker}
+                className="py-2 px-3.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                <span>Test Blocker Trigger</span>
+              </button>
+
+              <span className="text-[11px] text-neutral-400">
+                {NativeAppBlocker.isNativeAndroid() ? '🟢 Running on Native Android' : '⚪ Web Simulation Mode'}
+              </span>
+            </div>
+
+            {blockerTestStatus && (
+              <div className="text-xs text-cyan-300 font-medium animate-in fade-in p-2.5 rounded-lg bg-cyan-950/40 border border-cyan-800/60">
+                {blockerTestStatus}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 7: PERMISSIONS */}
       {activeSection === 'permissions' && (
         <div className="space-y-4 animate-in fade-in">
           <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 text-xs text-neutral-300 flex items-start gap-2">
@@ -970,16 +1047,16 @@ export const SettingsScreen: React.FC = () => {
         </div>
       )}
 
-      {/* SECTION 7: DATA, BACKUP & RESET */}
+      {/* SECTION 8: DATA & STORAGE */}
       {activeSection === 'data' && (
         <div className="space-y-4 animate-in fade-in">
-          {/* Backup and Export */}
+          {/* Real Data Retention Note */}
           <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-              Local Storage Backup
+              Persistent Local Storage
             </div>
-            <p className="text-xs text-neutral-300">
-              All sessions, targets, to-dos, flashcards, notes, and metrics remain exclusively on this device with zero cloud tracking.
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              All your study sessions, custom topics, notes, to-dos, flashcards, uploaded audio files, and settings are saved automatically in your local device storage. They will <strong>never reset</strong> on reload or restart.
             </p>
 
             <div className="flex items-center gap-2 pt-2">
@@ -1010,6 +1087,32 @@ export const SettingsScreen: React.FC = () => {
             )}
           </div>
 
+          {/* Quick Clear History & Demo Data */}
+          <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
+            <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+              Session History Management
+            </div>
+            <p className="text-xs text-neutral-300">
+              Clear your recorded study history or load sample 30-day metrics to test analytical charts.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={handleClearHistory}
+                className="flex-1 py-2 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Clear History Only
+              </button>
+
+              <button
+                onClick={handleLoadDemo}
+                className="flex-1 py-2 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-cyan-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Load Sample Demo Data
+              </button>
+            </div>
+          </div>
+
           {/* Reset All Data Section */}
           <div className="p-4 rounded-2xl bg-red-950/20 border border-red-900/40 space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-red-400 flex items-center gap-1.5">
@@ -1017,52 +1120,49 @@ export const SettingsScreen: React.FC = () => {
               Reset All Application Data
             </div>
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Clear all stored study history, session logs, custom topics, notes, to-dos, flashcards, uploaded custom ringtones, and return all settings back to default.
+              Clear all stored study history, custom topics, notes, to-dos, flashcards, uploaded custom ringtones, and return all settings back to default.
             </p>
 
-            <div className="pt-2">
-              <button
-                onClick={() => setShowResetModal(true)}
-                className="w-full py-3 px-4 rounded-xl bg-red-900/40 hover:bg-red-900/70 border border-red-800 text-red-200 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-red-400" />
-                <span>Reset All Data & Start Fresh</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="w-full py-2.5 px-4 rounded-xl bg-red-950/60 hover:bg-red-900 border border-red-800/80 text-red-200 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Reset Everything to Clean Slate</span>
+            </button>
           </div>
         </div>
       )}
 
       {/* Reset Confirmation Modal */}
       {showResetModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="w-full max-w-sm rounded-3xl bg-neutral-900 border border-red-800/80 p-6 space-y-4 shadow-2xl text-center">
-            <div className="w-12 h-12 rounded-full bg-red-950/80 border border-red-700/80 flex items-center justify-center mx-auto text-red-400">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-950 border border-neutral-800 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-950/80 border border-red-800/80 flex items-center justify-center mx-auto text-red-400">
               <AlertCircle className="w-6 h-6" />
             </div>
 
             <div>
-              <h3 className="text-lg font-black text-neutral-100 font-heading">
+              <h3 className="text-lg font-bold text-neutral-100 font-heading">
                 Reset All Application Data?
               </h3>
-              <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
-                This will permanently delete your study session histories, daily streaks, custom subjects, to-do lists, target topics, flashcards, notes, and custom sound files.
+              <p className="text-xs text-neutral-400 mt-1">
+                This will wipe all study session records, custom topics, notes, flashcards, and settings. This action cannot be undone.
               </p>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex gap-2">
               <button
                 onClick={() => setShowResetModal(false)}
-                className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 py-2.5 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold transition-colors cursor-pointer"
               >
                 Cancel
               </button>
-
               <button
                 onClick={handleConfirmResetAllData}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-lg"
               >
-                Yes, Reset All
+                Confirm Reset
               </button>
             </div>
           </div>

@@ -1,42 +1,41 @@
-import { DEFAULT_APPS, DEFAULT_SETTINGS, DEFAULT_SUBJECTS, ANDROID_PERMISSIONS, DEFAULT_TODOS, DEFAULT_TARGET_TOPICS, DEFAULT_FLASHCARDS } from '../constants';
-import { AppItem, AndroidPermission, StudyNote, StudySession, Subject, UserSettings, ActiveStudyState, TodoItem, TargetTopic, FlashCard } from '../types';
+import { DEFAULT_APPS, DEFAULT_SETTINGS, DEFAULT_SUBJECTS, ANDROID_PERMISSIONS } from '../constants';
+import { AppItem, AndroidPermission, StudyNote, StudySession, Subject, UserSettings, ActiveStudyState, TodoItem, TargetTopic, FlashCard, CalendarStudyEvent } from '../types';
 import { formatDateString } from './time';
 
 const KEYS = {
-  SETTINGS: 'studymode_settings_v1',
-  SUBJECTS: 'studymode_subjects_v1',
-  SESSIONS: 'studymode_sessions_v1',
-  APPS: 'studymode_apps_v1',
-  PERMISSIONS: 'studymode_permissions_v1',
-  NOTES: 'studymode_notes_v1',
-  TODOS: 'studymode_todos_v1',
-  TOPICS: 'studymode_topics_v1',
-  FLASHCARDS: 'studymode_flashcards_v1',
-  ACTIVE_STATE: 'studymode_active_session_v1',
+  INITIALIZED: 'studymode_v2_init',
+  SETTINGS: 'studymode_v2_settings',
+  SUBJECTS: 'studymode_v2_subjects',
+  SESSIONS: 'studymode_v2_sessions',
+  APPS: 'studymode_v2_apps',
+  PERMISSIONS: 'studymode_v2_permissions',
+  NOTES: 'studymode_v2_notes',
+  TODOS: 'studymode_v2_todos',
+  TOPICS: 'studymode_v2_topics',
+  FLASHCARDS: 'studymode_v2_flashcards',
+  EVENTS: 'studymode_v2_calendar_events',
+  ACTIVE_STATE: 'studymode_v2_active_session',
 };
 
-// Seed realistic 30-day history if empty
-function generateInitial30DayHistory(): StudySession[] {
+// Optional demo generator (only invoked when user explicitly clicks "Load Sample Demo Data")
+export function generateDemo30DayHistory(): StudySession[] {
   const sessions: StudySession[] = [];
-  const subjects = DEFAULT_SUBJECTS;
+  const subjects = Storage.getSubjects();
   const stopReasons = ['Going somewhere', 'Meal / Dinner time', 'Sleep / Bedtime', 'College / Class session', 'Work shift / Meeting'];
 
   const now = new Date();
-  
-  // Seed past 30 days
   for (let i = 28; i >= 0; i--) {
     const day = new Date();
     day.setDate(now.getDate() - i);
     const dateStr = formatDateString(day);
 
-    // 1 to 2 sessions on most days (skip a couple to be realistic)
     if (i % 7 === 5 && i !== 0) continue; // rest day
 
     const numSessions = (i % 3 === 0) ? 2 : 1;
 
     for (let sIdx = 0; sIdx < numSessions; sIdx++) {
-      const subject = subjects[(i + sIdx) % subjects.length];
-      const cycles = (i % 4) + 1; // 1 to 4 cycles
+      const subject = subjects[(i + sIdx) % subjects.length] || DEFAULT_SUBJECTS[0];
+      const cycles = (i % 4) + 1;
       
       const startHour = sIdx === 0 ? 9 + (i % 3) : 15 + (i % 2);
       const startMinute = (i * 7) % 60;
@@ -45,7 +44,6 @@ function generateInitial30DayHistory(): StudySession[] {
       sessionStart.setHours(startHour, startMinute, 0, 0);
 
       const studySecs = cycles * 3600 - ((i * 120) % 600);
-      const numBreaks = cycles;
       const breaksList = [];
       let totalBreakSecs = 0;
       let totalPenaltySecs = 0;
@@ -80,26 +78,11 @@ function generateInitial30DayHistory(): StudySession[] {
         totalPenaltySecs += (i % 2 === 0) ? 240 : 600;
       }
 
-      if (cycles >= 3) {
-        breaksList.push({
-          id: `brk-${i}-${sIdx}-3`,
-          reasonId: 'eat',
-          reasonName: 'Eat / Meal',
-          reasonIcon: '🍽️',
-          durationMinutesScheduled: 15,
-          actualDurationSeconds: 900,
-          penaltyMinutesAdded: 30,
-          timestamp: sessionStart.getTime() + 9000000,
-        });
-        totalBreakSecs += 900;
-        totalPenaltySecs += 1800;
-      }
-
       const totalElapsed = studySecs + totalBreakSecs + totalPenaltySecs;
       const sessionEnd = new Date(sessionStart.getTime() + totalElapsed * 1000);
 
       sessions.push({
-        id: `session-seed-${i}-${sIdx}`,
+        id: `demo-session-${i}-${sIdx}`,
         subjectId: subject.id,
         subjectName: subject.name,
         subjectColor: subject.color,
@@ -120,232 +103,218 @@ function generateInitial30DayHistory(): StudySession[] {
   return sessions.sort((a, b) => b.startTimestamp - a.startTimestamp);
 }
 
+function safeGet<T>(key: string, defaultValue: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null || raw === undefined) return defaultValue;
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.warn(`[StudyMode Storage] Error parsing key ${key}`, err);
+    return defaultValue;
+  }
+}
+
+function safeSet<T>(key: string, value: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.error(`[StudyMode Storage] Error saving key ${key}`, err);
+  }
+}
+
+// Initial bootstrap check
+function ensureInitialized(): void {
+  try {
+    const isInit = localStorage.getItem(KEYS.INITIALIZED);
+    if (!isInit) {
+      // First-ever launch: initialize with clean user slate
+      safeSet(KEYS.SETTINGS, DEFAULT_SETTINGS);
+      safeSet(KEYS.SUBJECTS, DEFAULT_SUBJECTS);
+      safeSet(KEYS.SESSIONS, []);
+      safeSet(KEYS.APPS, DEFAULT_APPS);
+      safeSet(KEYS.PERMISSIONS, ANDROID_PERMISSIONS);
+      safeSet(KEYS.NOTES, []);
+      safeSet(KEYS.TODOS, []);
+      safeSet(KEYS.TOPICS, []);
+      safeSet(KEYS.FLASHCARDS, []);
+      safeSet(KEYS.EVENTS, []);
+      localStorage.setItem(KEYS.INITIALIZED, 'true');
+    }
+  } catch {}
+}
+
+// Run bootstrap immediately on import
+ensureInitialized();
+
 export const Storage = {
   getSettings(): UserSettings {
-    try {
-      const data = localStorage.getItem(KEYS.SETTINGS);
-      return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
-    } catch {
+    const saved = safeGet<UserSettings | null>(KEYS.SETTINGS, null);
+    if (!saved) {
+      safeSet(KEYS.SETTINGS, DEFAULT_SETTINGS);
       return DEFAULT_SETTINGS;
     }
+    return { ...DEFAULT_SETTINGS, ...saved };
   },
 
   saveSettings(settings: UserSettings): void {
-    try {
-      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
-    } catch {}
+    safeSet(KEYS.SETTINGS, settings);
   },
 
   getSubjects(): Subject[] {
-    try {
-      const data = localStorage.getItem(KEYS.SUBJECTS);
-      return data ? JSON.parse(data) : DEFAULT_SUBJECTS;
-    } catch {
+    const saved = safeGet<Subject[] | null>(KEYS.SUBJECTS, null);
+    if (!saved || saved.length === 0) {
+      safeSet(KEYS.SUBJECTS, DEFAULT_SUBJECTS);
       return DEFAULT_SUBJECTS;
     }
+    return saved;
   },
 
   saveSubjects(subjects: Subject[]): void {
-    try {
-      localStorage.setItem(KEYS.SUBJECTS, JSON.stringify(subjects));
-    } catch {}
+    safeSet(KEYS.SUBJECTS, subjects);
   },
 
   getSessions(): StudySession[] {
-    try {
-      const data = localStorage.getItem(KEYS.SESSIONS);
-      if (!data) {
-        const initial = generateInitial30DayHistory();
-        this.saveSessions(initial);
-        return initial;
-      }
-      return JSON.parse(data);
-    } catch {
-      return [];
-    }
+    // Return saved sessions or empty array - NEVER resurrects fake sessions automatically
+    return safeGet<StudySession[]>(KEYS.SESSIONS, []);
   },
 
   saveSessions(sessions: StudySession[]): void {
-    try {
-      localStorage.setItem(KEYS.SESSIONS, JSON.stringify(sessions));
-    } catch {}
+    safeSet(KEYS.SESSIONS, sessions);
   },
 
   addSession(session: StudySession): void {
-    const sessions = this.getSessions();
-    sessions.unshift(session);
-    this.saveSessions(sessions);
+    const current = this.getSessions();
+    const updated = [session, ...current];
+    this.saveSessions(updated);
   },
 
   deleteSession(id: string): void {
-    const sessions = this.getSessions().filter((s) => s.id !== id);
-    this.saveSessions(sessions);
+    const current = this.getSessions();
+    const updated = current.filter((s) => s.id !== id);
+    this.saveSessions(updated);
   },
 
   clearAllSessions(): void {
-    try {
-      localStorage.removeItem(KEYS.SESSIONS);
-    } catch {}
+    safeSet(KEYS.SESSIONS, []);
   },
 
   getApps(): AppItem[] {
-    try {
-      const data = localStorage.getItem(KEYS.APPS);
-      return data ? JSON.parse(data) : DEFAULT_APPS;
-    } catch {
+    const saved = safeGet<AppItem[] | null>(KEYS.APPS, null);
+    if (!saved || saved.length === 0) {
+      safeSet(KEYS.APPS, DEFAULT_APPS);
       return DEFAULT_APPS;
     }
+    return saved;
   },
 
   saveApps(apps: AppItem[]): void {
-    try {
-      localStorage.setItem(KEYS.APPS, JSON.stringify(apps));
-    } catch {}
+    safeSet(KEYS.APPS, apps);
   },
 
   getPermissions(): AndroidPermission[] {
-    try {
-      const data = localStorage.getItem(KEYS.PERMISSIONS);
-      return data ? JSON.parse(data) : ANDROID_PERMISSIONS;
-    } catch {
+    const saved = safeGet<AndroidPermission[] | null>(KEYS.PERMISSIONS, null);
+    if (!saved || saved.length === 0) {
+      safeSet(KEYS.PERMISSIONS, ANDROID_PERMISSIONS);
       return ANDROID_PERMISSIONS;
     }
+    return saved;
   },
 
   savePermissions(permissions: AndroidPermission[]): void {
-    try {
-      localStorage.setItem(KEYS.PERMISSIONS, JSON.stringify(permissions));
-    } catch {}
+    safeSet(KEYS.PERMISSIONS, permissions);
   },
 
   getNotes(): StudyNote[] {
-    try {
-      const data = localStorage.getItem(KEYS.NOTES);
-      if (!data) {
-        const seedNotes: StudyNote[] = [
-          {
-            id: 'note-1',
-            title: 'Mathematics — Differential Equations Formula Sheet',
-            content: 'dy/dx + P(x)y = Q(x)\nIntegrating factor IF = e^(∫P dx)\nGeneral solution: y * IF = ∫(Q * IF) dx + C\nRemember to verify boundary conditions at x = 0!',
-            subjectId: 'math',
-            subjectName: 'Mathematics',
-            createdAt: Date.now() - 86400000 * 2,
-            updatedAt: Date.now() - 86400000 * 2,
-          },
-          {
-            id: 'note-2',
-            title: 'CNC G-Codes & M-Codes Quick Reference',
-            content: 'G00: Rapid linear positioning\nG01: Linear feed move\nG02/G03: CW / CCW Arc feed\nM03: Spindle CW start\nM08: Flood Coolant ON\nM30: Program End and Rewind',
-            subjectId: 'cnc',
-            subjectName: 'CNC',
-            createdAt: Date.now() - 86400000 * 4,
-            updatedAt: Date.now() - 86400000 * 4,
-          }
-        ];
-        this.saveNotes(seedNotes);
-        return seedNotes;
-      }
-      return JSON.parse(data);
-    } catch {
-      return [];
-    }
+    return safeGet<StudyNote[]>(KEYS.NOTES, []);
   },
 
   saveNotes(notes: StudyNote[]): void {
-    try {
-      localStorage.setItem(KEYS.NOTES, JSON.stringify(notes));
-    } catch {}
+    safeSet(KEYS.NOTES, notes);
   },
 
   getActiveState(): ActiveStudyState | null {
-    try {
-      const data = localStorage.getItem(KEYS.ACTIVE_STATE);
-      return data ? JSON.parse(data) : null;
-    } catch {
-      return null;
-    }
+    return safeGet<ActiveStudyState | null>(KEYS.ACTIVE_STATE, null);
   },
 
   saveActiveState(state: ActiveStudyState | null): void {
-    try {
-      if (!state) {
+    if (!state) {
+      try {
         localStorage.removeItem(KEYS.ACTIVE_STATE);
-      } else {
-        localStorage.setItem(KEYS.ACTIVE_STATE, JSON.stringify(state));
-      }
-    } catch {}
+      } catch {}
+    } else {
+      safeSet(KEYS.ACTIVE_STATE, state);
+    }
   },
 
   getTodos(): TodoItem[] {
-    try {
-      const data = localStorage.getItem(KEYS.TODOS);
-      if (!data) {
-        this.saveTodos(DEFAULT_TODOS);
-        return DEFAULT_TODOS;
-      }
-      return JSON.parse(data);
-    } catch {
-      return DEFAULT_TODOS;
-    }
+    return safeGet<TodoItem[]>(KEYS.TODOS, []);
   },
 
   saveTodos(todos: TodoItem[]): void {
-    try {
-      localStorage.setItem(KEYS.TODOS, JSON.stringify(todos));
-    } catch {}
+    safeSet(KEYS.TODOS, todos);
   },
 
   getTargetTopics(): TargetTopic[] {
-    try {
-      const data = localStorage.getItem(KEYS.TOPICS);
-      if (!data) {
-        this.saveTargetTopics(DEFAULT_TARGET_TOPICS);
-        return DEFAULT_TARGET_TOPICS;
-      }
-      return JSON.parse(data);
-    } catch {
-      return DEFAULT_TARGET_TOPICS;
-    }
+    return safeGet<TargetTopic[]>(KEYS.TOPICS, []);
   },
 
   saveTargetTopics(topics: TargetTopic[]): void {
-    try {
-      localStorage.setItem(KEYS.TOPICS, JSON.stringify(topics));
-    } catch {}
+    safeSet(KEYS.TOPICS, topics);
   },
 
   getFlashcards(): FlashCard[] {
-    try {
-      const data = localStorage.getItem(KEYS.FLASHCARDS);
-      if (!data) {
-        this.saveFlashcards(DEFAULT_FLASHCARDS);
-        return DEFAULT_FLASHCARDS;
-      }
-      return JSON.parse(data);
-    } catch {
-      return DEFAULT_FLASHCARDS;
-    }
+    return safeGet<FlashCard[]>(KEYS.FLASHCARDS, []);
   },
 
   saveFlashcards(cards: FlashCard[]): void {
-    try {
-      localStorage.setItem(KEYS.FLASHCARDS, JSON.stringify(cards));
-    } catch {}
+    safeSet(KEYS.FLASHCARDS, cards);
+  },
+
+  getCalendarEvents(): CalendarStudyEvent[] {
+    return safeGet<CalendarStudyEvent[]>(KEYS.EVENTS, []);
+  },
+
+  saveCalendarEvents(events: CalendarStudyEvent[]): void {
+    safeSet(KEYS.EVENTS, events);
+  },
+
+  addCalendarEvent(event: CalendarStudyEvent): void {
+    const current = this.getCalendarEvents();
+    const updated = [event, ...current];
+    this.saveCalendarEvents(updated);
+  },
+
+  deleteCalendarEvent(id: string): void {
+    const current = this.getCalendarEvents();
+    const updated = current.filter((e) => e.id !== id);
+    this.saveCalendarEvents(updated);
+  },
+
+  // Load sample demo data on explicit user demand
+  loadDemoData(): void {
+    const demoSessions = generateDemo30DayHistory();
+    this.saveSessions(demoSessions);
   },
 
   exportAllData(): string {
-    return JSON.stringify({
-      settings: this.getSettings(),
-      subjects: this.getSubjects(),
-      sessions: this.getSessions(),
-      apps: this.getApps(),
-      permissions: this.getPermissions(),
-      notes: this.getNotes(),
-      todos: this.getTodos(),
-      targetTopics: this.getTargetTopics(),
-      flashcards: this.getFlashcards(),
-      exportedAt: new Date().toISOString(),
-    }, null, 2);
+    return JSON.stringify(
+      {
+        version: '2.0',
+        settings: this.getSettings(),
+        subjects: this.getSubjects(),
+        sessions: this.getSessions(),
+        apps: this.getApps(),
+        permissions: this.getPermissions(),
+        notes: this.getNotes(),
+        todos: this.getTodos(),
+        targetTopics: this.getTargetTopics(),
+        flashcards: this.getFlashcards(),
+        calendarEvents: this.getCalendarEvents(),
+        exportedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    );
   },
 
   importData(jsonString: string): boolean {
@@ -360,6 +329,7 @@ export const Storage = {
       if (parsed.todos) this.saveTodos(parsed.todos);
       if (parsed.targetTopics) this.saveTargetTopics(parsed.targetTopics);
       if (parsed.flashcards) this.saveFlashcards(parsed.flashcards);
+      if (parsed.calendarEvents) this.saveCalendarEvents(parsed.calendarEvents);
       return true;
     } catch {
       return false;
@@ -371,6 +341,18 @@ export const Storage = {
       Object.values(KEYS).forEach((key) => {
         localStorage.removeItem(key);
       });
+      // Re-initialize clean factory defaults
+      safeSet(KEYS.SETTINGS, DEFAULT_SETTINGS);
+      safeSet(KEYS.SUBJECTS, DEFAULT_SUBJECTS);
+      safeSet(KEYS.SESSIONS, []);
+      safeSet(KEYS.APPS, DEFAULT_APPS);
+      safeSet(KEYS.PERMISSIONS, ANDROID_PERMISSIONS);
+      safeSet(KEYS.NOTES, []);
+      safeSet(KEYS.TODOS, []);
+      safeSet(KEYS.TOPICS, []);
+      safeSet(KEYS.FLASHCARDS, []);
+      safeSet(KEYS.EVENTS, []);
+      localStorage.setItem(KEYS.INITIALIZED, 'true');
     } catch {}
-  }
+  },
 };

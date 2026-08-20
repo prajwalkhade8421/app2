@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { ActiveStudyState, BreakRecord, PredefinedBreakReason, StudyNote, StudySession, Subject, UserSettings, AppItem, AndroidPermission, NavigationTab, TodoItem, TargetTopic, FlashCard, ThemeAccentColor, AlarmRingtoneId } from '../types';
+import { ActiveStudyState, BreakRecord, PredefinedBreakReason, StudyNote, StudySession, Subject, UserSettings, AppItem, AndroidPermission, NavigationTab, TodoItem, TargetTopic, FlashCard, AlarmRingtoneId, CalendarStudyEvent } from '../types';
 import { Storage } from '../utils/storage';
 import { soundManager } from '../utils/audio';
 import { formatDateString } from '../utils/time';
-import { PREDEFINED_BREAKS, DEFAULT_SETTINGS, DEFAULT_SUBJECTS, ANDROID_PERMISSIONS, DEFAULT_APPS, DEFAULT_TODOS, DEFAULT_TARGET_TOPICS, DEFAULT_FLASHCARDS } from '../constants';
+import { DEFAULT_SETTINGS, DEFAULT_SUBJECTS, ANDROID_PERMISSIONS, DEFAULT_APPS } from '../constants';
 import { getThemeConfig, applyThemeToDocument, AccentThemeConfig } from '../utils/theme';
+import { NativeAppBlocker } from '../utils/nativeAppBlocker';
 
 interface StudyContextType {
   activeState: ActiveStudyState | null;
@@ -18,6 +19,7 @@ interface StudyContextType {
   todos: TodoItem[];
   targetTopics: TargetTopic[];
   flashcards: FlashCard[];
+  calendarEvents: CalendarStudyEvent[];
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
   selectedSubjectId: string;
@@ -31,6 +33,7 @@ interface StudyContextType {
   stopStudyMode: (stopReason: string, stopDetails?: string) => void;
   updateSettings: (newSettings: Partial<UserSettings>) => void;
   resetAllData: () => void;
+  loadDemoData: () => void;
   testPlayRingtone: (ringtoneId: AlarmRingtoneId) => void;
   stopTestRingtone: () => void;
   uploadCustomAlarmAudio: (file: File) => Promise<boolean>;
@@ -57,6 +60,10 @@ interface StudyContextType {
   addFlashcard: (front: string, back: string, subjectId?: string) => void;
   toggleFlashcardMastered: (id: string) => void;
   deleteFlashcard: (id: string) => void;
+  // Calendar Event Handlers
+  addCalendarEvent: (event: Omit<CalendarStudyEvent, 'id' | 'createdAt'>) => void;
+  toggleCalendarEventCompleted: (id: string) => void;
+  deleteCalendarEvent: (id: string) => void;
   deleteSession: (id: string) => void;
   clearAllHistory: () => void;
   requestAllPermissions: () => Promise<void>;
@@ -84,6 +91,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [todos, setTodosState] = useState<TodoItem[]>(() => Storage.getTodos());
   const [targetTopics, setTargetTopicsState] = useState<TargetTopic[]>(() => Storage.getTargetTopics());
   const [flashcards, setFlashcardsState] = useState<FlashCard[]>(() => Storage.getFlashcards());
+  const [calendarEvents, setCalendarEventsState] = useState<CalendarStudyEvent[]>(() => Storage.getCalendarEvents());
   const [activeState, setActiveState] = useState<ActiveStudyState | null>(() => Storage.getActiveState());
 
   const themeConfig = getThemeConfig(settings.accentColor);
@@ -159,13 +167,13 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         new Notification(title, {
           body,
-          icon: '/favicon.ico',
+          icon: '/icon.svg',
         });
       } catch {}
     }
   }, []);
 
-  // Main Timer Tick & Wall-clock Synchronization (Works even when display turns off or tab sleeps)
+  // Main Timer Tick & Wall-clock Synchronization
   const syncTimerState = useCallback(() => {
     const now = Date.now();
     const lastTick = lastTickTimeRef.current;
@@ -331,7 +339,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Start Study Mode
   const startStudyMode = useCallback((subjId?: string) => {
     const targetSubjectId = subjId || selectedSubjectId;
-    const subject = subjects.find((s) => s.id === targetSubjectId) || subjects[0];
+    const subject = subjects.find((s) => s.id === targetSubjectId) || subjects[0] || DEFAULT_SUBJECTS[0];
     const now = Date.now();
     const cycleMins = settings.studyCycleMinutes || 60;
     const cycleSecs = cycleMins * 60;
@@ -359,9 +367,12 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveState(newState);
     Storage.saveActiveState(newState);
 
+    // Trigger Native Android Blocker service
+    NativeAppBlocker.startBlocker(apps, subject.name);
+
     if (settings.soundEnabled) soundManager.playTickSound();
     notifyUser('TIMESKIP MODE ACTIVATED', `Studying ${subject.name}. Repeating 1-hour cycle started.`);
-  }, [selectedSubjectId, subjects, settings, notifyUser]);
+  }, [selectedSubjectId, subjects, settings, apps, notifyUser]);
 
   // Pause / Resume
   const pauseStudy = useCallback(() => {
@@ -512,6 +523,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveState(null);
     Storage.saveActiveState(null);
     setShowStopModal(false);
+
+    // Stop Native Android Blocker service
+    NativeAppBlocker.stopBlocker();
 
     if (settings.soundEnabled) soundManager.playGoalCelebrationSound();
     notifyUser('Study Session Saved', `Recorded ${Math.floor(completedSession.actualStudySeconds / 60)} minutes of focus.`);
@@ -768,6 +782,36 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  // Calendar Events Handlers
+  const addCalendarEvent = useCallback((eventData: Omit<CalendarStudyEvent, 'id' | 'createdAt'>) => {
+    const newEvent: CalendarStudyEvent = {
+      ...eventData,
+      id: `evt-${Date.now()}`,
+      createdAt: Date.now(),
+    };
+    setCalendarEventsState((prev) => {
+      const updated = [newEvent, ...prev];
+      Storage.saveCalendarEvents(updated);
+      return updated;
+    });
+  }, []);
+
+  const toggleCalendarEventCompleted = useCallback((id: string) => {
+    setCalendarEventsState((prev) => {
+      const updated = prev.map((e) => (e.id === id ? { ...e, completed: !e.completed } : e));
+      Storage.saveCalendarEvents(updated);
+      return updated;
+    });
+  }, []);
+
+  const deleteCalendarEvent = useCallback((id: string) => {
+    setCalendarEventsState((prev) => {
+      const updated = prev.filter((e) => e.id !== id);
+      Storage.saveCalendarEvents(updated);
+      return updated;
+    });
+  }, []);
+
   const deleteSession = useCallback((id: string) => {
     Storage.deleteSession(id);
     setSessionsState(Storage.getSessions());
@@ -776,6 +820,11 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const clearAllHistory = useCallback(() => {
     Storage.clearAllSessions();
     setSessionsState([]);
+  }, []);
+
+  const loadDemoData = useCallback(() => {
+    Storage.loadDemoData();
+    setSessionsState(Storage.getSessions());
   }, []);
 
   // Reset ALL app data to initial factory state
@@ -788,9 +837,10 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAppsState(DEFAULT_APPS);
     setPermissionsState(ANDROID_PERMISSIONS);
     setNotesState([]);
-    setTodosState(DEFAULT_TODOS);
-    setTargetTopicsState(DEFAULT_TARGET_TOPICS);
-    setFlashcardsState(DEFAULT_FLASHCARDS);
+    setTodosState([]);
+    setTargetTopicsState([]);
+    setFlashcardsState([]);
+    setCalendarEventsState([]);
     setActiveState(null);
     setSelectedSubjectId('math');
     setCurrentTab('home');
@@ -817,7 +867,6 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Upload custom alarm audio (convert to base64 and store)
   const uploadCustomAlarmAudio = useCallback((file: File): Promise<boolean> => {
     return new Promise((resolve) => {
-      // Check file size (limit to 10MB)
       if (file.size > 10 * 1024 * 1024) {
         resolve(false);
         return;
@@ -888,6 +937,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         todos,
         targetTopics,
         flashcards,
+        calendarEvents,
         currentTab,
         setCurrentTab,
         selectedSubjectId,
@@ -901,6 +951,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         stopStudyMode,
         updateSettings,
         resetAllData,
+        loadDemoData,
         testPlayRingtone,
         stopTestRingtone,
         uploadCustomAlarmAudio,
@@ -924,6 +975,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addFlashcard,
         toggleFlashcardMastered,
         deleteFlashcard,
+        addCalendarEvent,
+        toggleCalendarEventCompleted,
+        deleteCalendarEvent,
         deleteSession,
         clearAllHistory,
         requestAllPermissions,

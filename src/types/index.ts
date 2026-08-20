@@ -140,6 +140,20 @@ export interface TargetTopic {
   createdAt: number;
 }
 
+export interface CalendarStudyEvent {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  type: 'exam' | 'target' | 'revision' | 'assignment' | 'class';
+  subjectId?: string;
+  subjectName?: string;
+  targetHours?: number;
+  notes?: string;
+  completed?: boolean;
+  createdAt: number;
+}
+
 export interface FlashCard {
   id: string;
   front: string; // Question or formula name
