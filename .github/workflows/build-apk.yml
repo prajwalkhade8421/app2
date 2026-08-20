@@ -11,140 +11,109 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Get the project
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Android requires Java 17 for this setup
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 3. Capacitor CLI now requires Node 22+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
-      # 4. Install the web app dependencies
       - name: Install Dependencies
         run: |
           npm install
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
 
-      # 5. Build the React/web application
       - name: Build Web App
         run: npm run build
 
-      # 6. Recreate Android project while preserving your custom
-      #    Accessibility Service / App Blocker source code
       - name: Generate Android Project
         shell: bash
         run: |
           set -e
 
-          echo "Preparing Android project..."
-
           if [ -d "android" ]; then
-            echo "Backing up custom Android source..."
-
-            mkdir -p /tmp/study-mode-android-backup
+            mkdir -p /tmp/study-mode-backup
 
             if [ -d "android/app/src/main" ]; then
-              cp -a android/app/src/main /tmp/study-mode-android-backup/
+              cp -a android/app/src/main /tmp/study-mode-backup/
             fi
 
             rm -rf android
           fi
 
-          echo "Generating fresh Capacitor Android project..."
-
           npx cap add android
 
-          echo "Restoring custom Android source..."
-
-          if [ -d "/tmp/study-mode-android-backup/main" ]; then
+          if [ -d "/tmp/study-mode-backup/main" ]; then
             rm -rf android/app/src/main
-            cp -a /tmp/study-mode-android-backup/main android/app/src/main
+            cp -a /tmp/study-mode-backup/main android/app/src/main
           fi
-
-          echo "Syncing Capacitor..."
 
           npx cap sync android
 
-      # 7. Make sure the Accessibility Service description exists
-      - name: Fix Android Accessibility Resource
+      - name: Fix Accessibility Resource
         shell: bash
         run: |
           set -e
 
-          STRINGS_FILE="android/app/src/main/res/values/strings.xml"
+          FILE="android/app/src/main/res/values/strings.xml"
 
-          mkdir -p "$(dirname "$STRINGS_FILE")"
+          mkdir -p "$(dirname "$FILE")"
 
-          if [ ! -f "$STRINGS_FILE" ]; then
-            cat > "$STRINGS_FILE" <<'EOF'
+          if [ ! -f "$FILE" ]; then
+            cat > "$FILE" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">Study Mode</string>
               <string name="accessibility_service_description">Study Mode app blocker accessibility service</string>
           </resources>
           EOF
-          else
-            if ! grep -q 'name="accessibility_service_description"' "$STRINGS_FILE"; then
-              sed -i '/<\/resources>/i\    <string name="accessibility_service_description">Study Mode app blocker accessibility service</string>' "$STRINGS_FILE"
-            fi
+          elif ! grep -q 'accessibility_service_description' "$FILE"; then
+            sed -i '/<\/resources>/i\    <string name="accessibility_service_description">Study Mode app blocker accessibility service</string>' "$FILE"
           fi
 
-      # 8. Remove deprecated package attribute if present
       - name: Fix Android Manifest
         shell: bash
         run: |
-          set -e
-
           MANIFEST="android/app/src/main/AndroidManifest.xml"
 
           if [ -f "$MANIFEST" ]; then
             sed -i 's/ package="com\.studymode\.timeskip"//' "$MANIFEST"
           fi
 
-      # 9. Make Gradle executable
       - name: Prepare Gradle
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew --version
 
-      # 10. Clean Android build
       - name: Clean Android Build
         working-directory: android
         run: |
           ./gradlew clean --no-daemon
 
-      # 11. Build the APK
       - name: Build Debug APK
         working-directory: android
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      # 12. Verify APK actually exists
       - name: Verify APK
-        shell: bash
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not generated."
+            echo "APK was not generated."
             exit 1
           fi
 
-          echo "APK successfully generated:"
           ls -lh "$APK"
 
-      # 13. Upload APK to GitHub Actions
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
