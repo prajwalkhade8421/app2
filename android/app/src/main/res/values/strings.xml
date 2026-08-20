@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Study Mode</string>
+    <string name="title_activity_main">Study Mode</string>
+    <string name="package_name">com.studymode.timeskip</string>
+    <string name="custom_url_scheme">com.studymode.timeskip</string>
+    <string name="accessibility_service_description">Study Mode app blocker accessibility service</string>
+</resources>
